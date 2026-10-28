@@ -79,6 +79,9 @@ const semanticBtn = document.getElementById('semantic-btn');
 const semanticResults = document.getElementById('semantic-results');
 const semanticStatus = document.getElementById('semantic-status');
 
+const hybridInput = document.getElementById('hybrid-input');
+const hybridBtn = document.getElementById('hybrid-btn');
+
 const ragInput = document.getElementById('rag-input');
 const ragBtn = document.getElementById('rag-btn');
 const ragResults = document.getElementById('rag-results');
@@ -338,20 +341,32 @@ async function checkSearchReadiness() {
 
         // --- 1 embed-question call (only if DB has embeddings) ---
         let semanticReady = false;
+        let testEmbedding = null;
         if (hasEmbeddings) {
             try {
                 const { data, error: fnError } = await supabaseClient.functions.invoke('embed-question', {
                     body: { question: 'test' }
                 });
                 semanticReady = !fnError;
+                testEmbedding = data?.embedding ?? null;
             } catch {
                 // CORS or network error → function not deployed
             }
         }
         setSearchReady('semantic', semanticReady);
 
-        // --- 1 generate-answer call (only if semantic pipeline is ready) ---
-        if (!semanticReady) {
+        // --- Hybrid: reuse the test embedding to ask for 1 row (proves hybrid_search exists) ---
+        let hybridReady = false;
+        if (semanticReady && testEmbedding) {
+            const { error } = await supabaseClient.rpc('hybrid_search', {
+                query_text: 'test', query_embedding: testEmbedding, match_count: 1
+            });
+            hybridReady = !error;
+        }
+        setSearchReady('hybrid', hybridReady);
+
+        // --- 1 generate-answer call (only if the hybrid pipeline it uses is ready) ---
+        if (!hybridReady) {
             setSearchReady('rag', false);
         } else {
             try {
@@ -367,6 +382,7 @@ async function checkSearchReadiness() {
         console.log('Readiness check failed:', err.message);
         setSearchReady('keyword', false);
         setSearchReady('semantic', false);
+        setSearchReady('hybrid', false);
         setSearchReady('rag', false);
     } finally {
         readinessCheckRunning = false;
@@ -516,6 +532,59 @@ async function semanticSearch() {
 }
 
 // ============================================
+// HYBRID SEARCH (keyword + semantic, merged in the database)
+// ============================================
+
+async function hybridSearch() {
+    const query = hybridInput ? hybridInput.value.trim() : '';
+    if (!query || !supabaseClient) return;
+
+    showLoading(true);
+    clearResults('hybrid');
+
+    try {
+        // Step 1: Get embedding (for the "meaning" half)
+        const embedding = await getEmbedding(query);
+
+        // Step 2: One database call runs both searches and merges them
+        const results = await searchHybrid(query, embedding);
+
+        if (!results || results.length === 0) {
+            showResults('hybrid', '<div class="no-results">No matches found. Try a different query.</div>');
+            return;
+        }
+
+        // Step 3: Show each sentence with where it placed on each list
+        let html = '';
+        for (const result of results) {
+            html += `<div class="result-card">
+                <div class="result-card-header">
+                    <div>
+                        <div class="result-title"><a href="${escapeHtml(result.url || '')}" target="_blank" class="result-title-link">${escapeHtml(result.title)}</a></div>
+                        <div class="result-speaker">by ${escapeHtml(result.speaker)}</div>
+                    </div>
+                    ${similarityBadge(result.similarity)}
+                </div>
+                <div class="result-sentences">${escapeHtml(result.text)}</div>
+                <div class="hybrid-ranks">${rankChip('Keyword', result.keyword_rank)}${rankChip('Meaning', result.semantic_rank)}</div>
+            </div>`;
+        }
+        showResults('hybrid', html);
+
+    } catch (error) {
+        showResults('hybrid', `<div class="result-error">Error: ${escapeHtml(error.message)}</div>`);
+    } finally {
+        showLoading(false);
+    }
+}
+
+// "Keyword #3" if that list found the sentence, "Keyword —" if it didn't
+function rankChip(label, rank) {
+    const found = rank != null;
+    return `<span class="rank-chip ${found ? 'found' : 'missed'}">${label} ${found ? '#' + rank : '—'}</span>`;
+}
+
+// ============================================
 // RAG (ASK A QUESTION)
 // ============================================
 
@@ -530,10 +599,10 @@ async function askQuestion() {
         // Step 1: Get embedding
         const embedding = await getEmbedding(question);
 
-        // Step 2: Search for similar sentences
-        const results = await searchSentences(embedding);
+        // Step 2: Hybrid search (keyword + meaning) for the best sentences
+        const results = await searchHybrid(question, embedding);
 
-        // Step 3: Group by talk (with similarity scores and URLs)
+        // Step 3: Group by talk, ranking talks by their total hybrid score
         const topTalks = groupByTalk(results);
 
         // Step 4: Fetch full talk text for richer context
@@ -553,7 +622,7 @@ async function askQuestion() {
                 <div class="result-title">AI Answer</div>
                 ${overallBadge}
             </div>
-            <div class="result-sentences">${escapeHtml(answer)}</div>
+            <div class="result-sentences markdown-body">${renderMarkdown(answer)}</div>
         </div>`;
 
         // Show source talks with per-talk similarity badges and links
@@ -609,7 +678,33 @@ async function searchSentences(embedding) {
     return data;
 }
 
-// Group search results by talk, computing average similarity per talk
+// Hybrid search: one database call that runs keyword + semantic search and
+// merges them (see supabase/migrations/20261027_hybrid_search.sql)
+async function searchHybrid(text, embedding) {
+    if (!supabaseClient) throw new Error('Supabase not configured');
+
+    const { data, error } = await supabaseClient.rpc('hybrid_search', {
+        query_text: text,
+        query_embedding: embedding,
+        match_count: 20
+    });
+
+    if (error) throw new Error(`Hybrid search failed: ${error.message}`);
+    return data;
+}
+
+// Turn the AI's Markdown into safe HTML. marked converts **bold**, lists, etc.;
+// DOMPurify removes anything that could run code. If either library failed to
+// load, fall back to plain text.
+function renderMarkdown(markdown) {
+    if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+        return escapeHtml(markdown);
+    }
+    return DOMPurify.sanitize(marked.parse(markdown));
+}
+
+// Group search results by talk. Talks are ranked by total hybrid score when
+// the rows have one (more strong matches = higher), otherwise by average similarity.
 function groupByTalk(sentences) {
     const talkMap = {};
 
@@ -621,15 +716,20 @@ function groupByTalk(sentences) {
                 speaker: sent.speaker,
                 url: sent.url,
                 sentences: [],
-                totalSimilarity: 0
+                totalSimilarity: 0,
+                totalScore: 0
             };
         }
         talkMap[sent.talk_id].sentences.push(sent.text);
         talkMap[sent.talk_id].totalSimilarity += sent.similarity;
+        talkMap[sent.talk_id].totalScore += sent.score ?? 0;
     }
 
+    const avg = t => t.totalSimilarity / t.sentences.length;
+    const hasScores = sentences.some(s => s.score != null);
+
     return Object.values(talkMap)
-        .sort((a, b) => b.totalSimilarity / b.sentences.length - a.totalSimilarity / a.sentences.length)
+        .sort((a, b) => hasScores ? b.totalScore - a.totalScore : avg(b) - avg(a))
         .slice(0, 3)
         .map(talk => ({
             talk_id: talk.talk_id,
@@ -747,6 +847,11 @@ if (semanticInput) semanticInput.addEventListener('keypress', (e) => {
 });
 
 // RAG search
+if (hybridBtn) hybridBtn.addEventListener('click', hybridSearch);
+if (hybridInput) hybridInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') hybridSearch();
+});
+
 if (ragBtn) ragBtn.addEventListener('click', askQuestion);
 if (ragInput) ragInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') askQuestion();

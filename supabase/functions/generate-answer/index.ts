@@ -23,7 +23,12 @@ const SYSTEM_PROMPT =
     "You are a helpful assistant that answers questions about General Conference talks " +
     "from The Church of Jesus Christ of Latter-day Saints. Use ONLY the talk excerpts " +
     "provided. If the answer isn't in them, say so. Cite the talk title and speaker " +
-    "for each point you draw from a talk.";
+    "for each point you draw from a talk.\n\n" +
+    // The website renders the answer as Markdown, so ask for clean Markdown.
+    "Format the answer in Markdown: one short opening paragraph, then a bulleted " +
+    "list of the main points with each key idea in **bold**, then a one-sentence " +
+    "summary. Leave a blank line between paragraphs and before lists. Cite like " +
+    "this: (*Talk Title*, Speaker). Do not use headings.";
 
 Deno.serve(async (req) => {
     if (req.method === "OPTIONS") {

@@ -650,6 +650,64 @@ input:focus {
     border-radius: 2px;
 }
 
+/* AI answer rendered from Markdown */
+.markdown-body > :first-child {
+    margin-top: 0;
+}
+
+.markdown-body > :last-child {
+    margin-bottom: 0;
+}
+
+.markdown-body p {
+    margin: 0 0 0.85rem;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+    margin: 0 0 0.85rem;
+    padding-left: 1.25rem;
+}
+
+.markdown-body li {
+    margin-bottom: 0.5rem;
+}
+
+.markdown-body li::marker {
+    color: var(--secondary);
+}
+
+.markdown-body strong {
+    color: #fff;
+    font-weight: 600;
+}
+
+.markdown-body em {
+    color: var(--text-muted);
+}
+
+/* Hybrid search: which list(s) found each sentence */
+.hybrid-ranks {
+    display: flex;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-xs);
+}
+
+.rank-chip {
+    font-size: 0.75rem;
+    line-height: 1;
+    padding: 0.3rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--surface-light);
+    color: var(--text-muted);
+}
+
+.rank-chip.found {
+    color: var(--text);
+    border-color: var(--secondary);
+    background: rgba(99, 102, 241, 0.15);
+}
+
 .result-sources {
     font-size: 0.8rem;
     color: var(--text-muted);

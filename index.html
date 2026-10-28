@@ -117,14 +117,30 @@
                     <div class="search-results" id="semantic-results"></div>
                 </div>
 
-                <!-- Panel 3: RAG (Ask a Question) -->
+                <!-- Panel 3: Hybrid Search (keyword + semantic, merged) -->
+                <div class="search-panel" id="hybrid-panel">
+                    <div class="panel-header">
+                        <h3>🔀 Hybrid Search</h3>
+                        <span class="status-badge not-ready" id="hybrid-status">🔴 Not Ready</span>
+                    </div>
+                    <p class="panel-description">Runs keyword and semantic search together and merges the two
+                        rankings. Catches exact words (names, rare terms) and meaning at the same time.</p>
+                    <div class="panel-input">
+                        <input type="text" id="hybrid-input" placeholder="Search by words and meaning..."
+                            autocomplete="off" disabled />
+                        <button id="hybrid-btn" class="btn-primary" disabled>Search</button>
+                    </div>
+                    <div class="search-results" id="hybrid-results"></div>
+                </div>
+
+                <!-- Panel 4: RAG (Ask a Question) -->
                 <div class="search-panel" id="rag-panel">
                     <div class="panel-header">
                         <h3>🤖 Ask a Question (RAG)</h3>
                         <span class="status-badge not-ready" id="rag-status">🔴 Not Ready</span>
                     </div>
-                    <p class="panel-description">Get AI-generated answers based on conference talks. Requires all Edge
-                        Functions deployed.</p>
+                    <p class="panel-description">Get AI-generated answers based on conference talks. The talks are
+                        picked with hybrid search. Requires all Edge Functions deployed.</p>
                     <div class="panel-input">
                         <input type="text" id="rag-input" placeholder="Ask a question about conference talks..."
                             autocomplete="off" disabled />
@@ -143,6 +159,11 @@
 
     <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Markdown for AI answers: marked turns Markdown into HTML,
+         DOMPurify strips anything dangerous (like <script>) from that HTML -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 
     <!-- Configuration (Students will replace this) -->
     <script src="config.js"></script>
