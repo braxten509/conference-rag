@@ -419,3 +419,6 @@ enabled = true
 # so Supabase's automatic check is turned off. Same as --no-verify-jwt.
 [functions.embed-question]
 verify_jwt = false
+
+[functions.generate-answer]
+verify_jwt = false
